@@ -1,0 +1,14 @@
+{
+  "name": "gstack-deepseek",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Run gstack on DeepSeek — a six-file backend port, no Anthropic account required.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  }
+}

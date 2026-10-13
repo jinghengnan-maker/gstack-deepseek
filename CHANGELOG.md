@@ -22,6 +22,12 @@
 - `bin/gstack-deepseek-claude.ts` —— 独立 Agent：直接对 DeepSeek API
   实现 `claude -p --output-format json` 协议，内置 `Read` / `Grep` / `Glob`
   工具循环、工作目录围栏与调用上限。用于**没装 Claude Code** 的机器。
+- `test/deepseek.test.ts` —— 20 个测试，**密封**：不联网、不需要 key、
+  不读本机真实凭据库。其中两个是回归守卫：显式传入的 env 对象不得读盘，
+  以及 `applyDeepSeekEnv()` 不得覆盖调用方已设的值。
+- `.github/workflows/ci.yml` —— 两个 job：双平台跑 `bun test`；拉取上游固定
+  commit，确认补丁干净应用，并 `diff` 五个源文件与 `src/` 逐字节一致，
+  防止 `src/` 与补丁各自漂移。
 
 ### Fixed
 

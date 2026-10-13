@@ -24,6 +24,7 @@ gstack 是 Garry Tan 的「虚拟工程团队」——**57 个技能**，从产�
 - [改了什么](#改了什么)
 - [原理：三个坑](#原理三个坑)
 - [实测结果](#实测结果)
+- [测试与 CI](#测试与-ci)
 - [已知限制](#已知限制)
 - [平台说明](#平台说明)
 - [归属与许可](#归属与许可)
@@ -199,9 +200,41 @@ if (env !== process.env) return undefined;   // lib/deepseek.ts:79
 | 7 | 技能扫描 | **57 个 gstack 技能**进入目录，0 个缺 `name`，0 个重名 |
 | 8 | `bun run typecheck` | 通过 |
 | 9 | **补丁可复现性** | 全新浅克隆上游（`dbf400e`）+ `git apply` → 5 个源文件与本机开发版 **SHA256 逐一相同** |
+| 10 | **`bun test`** | **20 passed / 0 failed**（38 个断言，不联网、不需要 key） |
 
 **第 3 项最有说服力**：改造后「没有 key 时该拒绝」的行为与上游一字不差——
 说明改的是**补通道**，不是拆门禁。
+
+---
+
+## 测试与 CI
+
+```bash
+bun test        # 20 个测试，不联网、不需要 key
+```
+
+`test/deepseek.test.ts` 是**密封**的：不访问网络，不读本机真实凭据库，
+所以它在任何机器上、任何 CI runner 上结果都一样。这一点是**被测行为本身**，
+不是顺手写的便利——两个关键回归测试：
+
+- **显式传入的 env 不读盘**。`resolveDeepSeekKey({})` 必须返回 `undefined`，
+  哪怕这台机器上 `~/.dsh/.credentials.yaml` 里躺着真 key。守卫一旦被删，
+  密封测试就会悄悄读到一把真凭据。
+- **`applyDeepSeekEnv` 永不覆盖**。环境里已显式设置的 `ANTHROPIC_BASE_URL`
+  必须原样保留——「本来就要连真 Anthropic 的会话」不能被这个改动劫持。
+
+CI（`.github/workflows/ci.yml`）跑两件事：
+
+1. **`test`** —— Ubuntu + Windows 双平台跑 `bun test`。
+2. **`patch`** —— 拉取上游固定的 `dbf400ec3f1ffb96a429f0d0b29ca932b3d6c6f0`，
+   确认补丁能干净应用，并 **`diff` 五个源文件与 `src/` 是否逐字节相同**。
+
+第 2 项是保证 [src/](src/) 和[补丁](patch/gstack-deepseek-port.patch) 永远
+不会各自漂移——你在 GitHub 上读到的代码，就是补丁实际产出的代码。
+
+> 那个基线 commit 在上游没有对应 tag（gstack 不发 release tag），所以只能钉
+> 完整的 40 位 SHA。它是**不可变**的：这里变红，只可能是本项目自己改坏了，
+> 不会是「上游动了」。
 
 ---
 
@@ -245,7 +278,7 @@ Windows 注意：`./setup` 需要 Git Bash 或 MSYS；Smart App Control 可能�
 
 **上游**：[garrytan/gstack](https://github.com/garrytan/gstack) —
 MIT，Copyright (c) 2026 Garry Tan。
-gstack 这个名字、61 个技能的设计与全部提示词文本都归他。
+gstack 这个名字、57 个技能的设计与全部提示词文本都归他。
 **如果你觉得这套东西有用，去给上游点 star。**
 
 **本项目**：只做后端适配。`src/lib/claude-bin.ts`、
