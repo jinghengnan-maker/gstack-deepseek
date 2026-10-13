@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      - run: bun test
+
+  patch:
+    name: patch still applies upstream
+    runs-on: ubuntu-latest
+    env:
+      # The upstream commit this port was built, verified and byte-compared
+      # against (gstack's own VERSION file reads 1.91.95.0).
+      #
+      # Must be the FULL sha: GitHub only serves arbitrary-commit fetches by
+      # full object name, and `git fetch --depth 1 origin dbf400e` fails with
+      # "couldn't find remote ref dbf400e". This hash is also what gstack
+      # stamps into its build (browse --version prints it).
+      #
+      # Upstream has no release tags, so there is nothing more stable to pin.
+      # This base is immutable — a red run here means *our* patch or sources
+      # drifted, never that upstream moved.
+      UPSTREAM_COMMIT: dbf400ec3f1ffb96a429f0d0b29ca932b3d6c6f0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch upstream at the pinned commit
+        run: |
+          set -euo pipefail
+          git init -q upstream
+          cd upstream
+          git remote add origin https://github.com/garrytan/gstack.git
+          git fetch -q --depth 1 origin "$UPSTREAM_COMMIT"
+          git checkout -q FETCH_HEAD
+          echo "upstream: $(git log --oneline -1)"
+
+      - name: Patch applies cleanly
+        run: |
+          set -euo pipefail
+          cd upstream
+          git apply --check -v ../patch/gstack-deepseek-port.patch
+          git apply ../patch/gstack-deepseek-port.patch
+          echo "--- files changed by the patch ---"
+          git status --short
+
+      - name: Shipped sources match the patched upstream byte for byte
+        run: |
+          set -euo pipefail
+          diff -u upstream/lib/deepseek.ts                  src/lib/deepseek.ts
+          diff -u upstream/lib/claude-bin.ts                src/lib/claude-bin.ts
+          diff -u upstream/lib/outside-voice-api.ts         src/lib/outside-voice-api.ts
+          diff -u upstream/lib/outside-voice-runner.ts      src/lib/outside-voice-runner.ts
+          diff -u upstream/bin/gstack-deepseek-claude.ts    src/bin/gstack-deepseek-claude.ts
+          echo "all five files identical"
