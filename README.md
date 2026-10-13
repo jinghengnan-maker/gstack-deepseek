@@ -2,6 +2,7 @@
 
 **让 [gstack](https://github.com/garrytan/gstack) 跑在 DeepSeek 上。**
 
+[![CI](https://github.com/jinghengnan-maker/gstack-deepseek/actions/workflows/ci.yml/badge.svg)](https://github.com/jinghengnan-maker/gstack-deepseek/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Upstream](https://img.shields.io/badge/upstream-v1.91.95-blue.svg)](https://github.com/garrytan/gstack)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#平台说明)
