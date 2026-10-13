@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `docs/AUTHOR-NOTE.md` —— 补齐改写。新增「工序（The sprint）」「该跑哪个
+  review」「平行的冲刺」「卸载 / 回滚」「关于遥测」五节，并把「See it work」
+  从一行摘要换成上游那段完整对话示例（`Claude:` → `DeepSeek:`）。
+  工序、专家分工表、并行冲刺的叙事全部照原作者的写法保留，
+  只把后端从 Claude Code 换成 DeepSeek；凡属本项目立场的段落都有明确标注。
+
 ## [1.91.95-ds.1] — 2026-10
 
 首次发布。基于上游 gstack v1.91.95。
