@@ -50,6 +50,44 @@ function Ok   { param([string]$m) Write-Host "  [ok]   $m" -ForegroundColor Gree
 function Warn { param([string]$m) Write-Host "  [warn] $m" -ForegroundColor Yellow }
 function Die  { param([string]$m) Write-Host "  [fail] $m" -ForegroundColor Red; exit 1 }
 
+# gstack's build script is bash, but Git for Windows puts only <root>\cmd on
+# PATH -- never <root>\bin, where bash.exe lives. So `Get-Command bash` fails on
+# a perfectly good Git install. Derive the root from git.exe instead, which
+# works for any install location, then fall back to the usual suspects.
+function Resolve-GitBash {
+    $onPath = Get-Command bash -ErrorAction SilentlyContinue
+    if ($onPath) { return $onPath.Source }
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitCmd -and $gitCmd.Source) {
+        # <root>\cmd\git.exe -> <root>, or <root>\bin\git.exe -> <root>.
+        $gitDir   = Split-Path $gitCmd.Source -Parent
+        $gitRoot  = Split-Path $gitDir -Parent
+        foreach ($c in @(
+                (Join-Path $gitRoot 'bin\bash.exe'),
+                (Join-Path $gitRoot 'usr\bin\bash.exe'),
+                (Join-Path $gitDir  'bash.exe'))) {
+            $candidates.Add($c)
+        }
+    }
+
+    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, "$env:LOCALAPPDATA\Programs")) {
+        if ($base) { $candidates.Add((Join-Path $base 'Git\bin\bash.exe')) }
+    }
+
+    try {
+        $reg = Get-ItemProperty 'HKLM:\SOFTWARE\GitForWindows' -ErrorAction Stop
+        if ($reg.InstallPath) { $candidates.Add((Join-Path $reg.InstallPath 'bin\bash.exe')) }
+    } catch { }
+
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) { return $c }
+    }
+    return $null
+}
+
 Say ''
 Say 'gstack-deepseek installer'
 Say '=========================='
@@ -68,18 +106,25 @@ if (-not $bun) {
     Warn 'Install it with:  npm install -g bun'
     Die  'bun is required.'
 }
+$BunDir = Split-Path $bun.Source -Parent
 Ok "bun      $(bun --version)"
 
-$bash = Get-Command bash -ErrorAction SilentlyContinue
-if ($bash) {
-    Ok "bash     $bash"
+$Bash = Resolve-GitBash
+if ($Bash) {
+    Ok "bash     $Bash"
 } elseif (-not $SkipBuild) {
-    Warn 'bash not found on PATH.'
-    Warn 'The gstack build script is bash. Install Git for Windows and add'
-    Warn 'its bin directory to PATH, or pass -SkipBuild and build by hand.'
+    Warn 'bash not found.'
+    Warn 'The gstack build script is bash. Install Git for Windows'
+    Warn '(https://git-scm.com/download/win), or pass -SkipBuild and build by hand.'
     Die  'bash is required to build.'
 } else {
     Warn 'bash not found (fine, -SkipBuild was specified).'
+}
+
+# The build runs inside bash, so bash needs bun on ITS PATH. Git Bash does not
+# inherit a usable one from PowerShell in every install, so prepend explicitly.
+if ($Bash -and $BunDir) {
+    $env:PATH = "$BunDir;$env:PATH"
 }
 
 if (-not (Test-Path $Patch)) { Die "Patch not found at $Patch" }
@@ -163,8 +208,8 @@ if ($SkipBuild) {
         if ($LASTEXITCODE -ne 0) { Warn 'chromium download failed; /browse will not work until it succeeds.' }
         else { Ok 'chromium ready' }
 
-        & bash scripts/build.sh
-        if ($LASTEXITCODE -ne 0) { Die 'build failed. Re-run: bash scripts/build.sh' }
+        & $Bash scripts/build.sh
+        if ($LASTEXITCODE -ne 0) { Die "build failed. Re-run: `"$Bash`" scripts/build.sh" }
         Ok 'binaries built'
 
         # The standalone agent for hosts with no Claude Code.
@@ -212,14 +257,24 @@ if ($RegisterSkills -eq 'none') {
         Ok 'router skill registered as gstack.md'
     }
 
-    # Path anchor for anything that resolves ~/.claude/skills/gstack/...
-    $anchor = Join-Path $HOME '.claude\skills\gstack'
-    if (-not (Test-Path $anchor)) {
-        New-Item -ItemType Directory -Path (Split-Path $anchor) -Force | Out-Null
-        New-Item -ItemType Junction -Path $anchor -Target $Target | Out-Null
-        Ok "junction created: $anchor"
-    } else {
-        Ok "junction already present: $anchor"
+}
+
+# Path anchor for anything resolving ~/.claude/skills/gstack/... -- and the only
+# place lib/claude-bin.ts looks for the bundled DeepSeek shim on a host with no
+# Claude Code. Created even with -RegisterSkills none, for exactly that reason:
+# it costs one link, and without it there is no way to find the agent at all.
+$anchor = Join-Path $HOME '.claude\skills\gstack'
+if (Test-Path -LiteralPath $anchor) {
+    Ok "anchor already present: $anchor"
+} else {
+    New-Item -ItemType Directory -Path (Split-Path -Parent $anchor) -Force | Out-Null
+    try {
+        $TargetAbs = (Resolve-Path -LiteralPath $Target).Path
+        New-Item -ItemType Junction -Path $anchor -Target $TargetAbs -ErrorAction Stop | Out-Null
+        Ok "anchor created: $anchor"
+    } catch {
+        Warn "could not create the anchor at $anchor."
+        Warn "Set GSTACK_ROOT=$Target instead and the shim is still found."
     }
 }
 
@@ -245,9 +300,17 @@ if (-not $haveKey) {
 Say ''
 Say 'Done.'
 Say ''
-Say '  source    : ' -NoNewline; Say $Target
+Say "  source    : $Target"
+$shim = Join-Path $Target 'bin\gstack-deepseek-claude.exe'
+if (Test-Path $shim) {
+    Say "  agent     : $shim"
+    Say '              (used automatically when no Claude Code CLI is on PATH)'
+} else {
+    Say '  agent     : not built -- nothing will run until you build it:'
+    Say "              bun build --compile --outfile `"$shim`" bin\gstack-deepseek-claude.ts"
+}
 Say '  read next : docs/SKILLS.md for the skill list, docs/ANALYSIS.md for how it works'
 Say ''
 Say '  Do NOT set ANTHROPIC_* environment variables. The code derives what it'
-Say '  needs and a real Claude Code install must keep working. See ANALYSIS.md.'
+Say '  needs, and a real Claude Code install keeps working if you have one.'
 Say ''

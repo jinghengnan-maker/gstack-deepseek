@@ -22,6 +22,7 @@ gstack 是 Garry Tan 的「虚拟工程团队」——**57 个技能**，从产�
 
 - [这是什么](#这是什么)
 - [快速开始](#快速开始)
+- [装了之后什么能用](#装了之后什么能用)
 - [改了什么](#改了什么)
 - [原理：三个坑](#原理三个坑)
 - [实测结果](#实测结果)
@@ -92,8 +93,15 @@ macOS / Linux：
 ./install.sh ~/.gstack-src
 ```
 
-> **安装脚本说明**：这两个脚本是把本机手动安装过程脚本化，
-> 参考实现见下文。**未在全新机器上端到端验证过**，遇到问题请提 issue。
+> **安装脚本说明**
+>
+> `install.ps1` 已在**全新目标目录**上端到端跑通（Windows · Git 2.55 · Bun 1.4.3）：
+> 自动推导 Git Bash 路径 → 克隆上游 → 打补丁 → `bun install` → 全量构建 →
+> 编译 shim。装完验证：shim 真连 DeepSeek 返回结果、`browse` 真开页面、
+> 5 个源文件与 `src/` 逐字节一致。
+>
+> `install.sh`（macOS / Linux）只做过 `bash -n` 语法检查，**没有在真机上端到端跑过**。
+> 遇到问题请提 issue。
 
 ### 配置 key
 
@@ -123,6 +131,53 @@ DEEPSEEK_API_KEY: sk-...
 
 > 如果你已经装了 Claude Code，把它指向 DeepSeek 会更省事
 > （`~/.claude/settings.json`），gstack 会直接复用那个 CLI。
+
+---
+
+## 装了之后什么能用
+
+### 直接能用
+
+57 个技能里绝大多数装上就能跑。原因是 gstack 说的「需要 Claude」指的是
+**Claude 的技能渲染**（`~/.claude/skills/` 那份 Markdown），不是 Claude 的 API——
+本移植保留了这个渲染，所以这类技能一行都不用改。
+
+```
+规划评审  /office-hours /plan-ceo-review /plan-eng-review /plan-design-review
+          /plan-devex-review /plan-tune /autoplan /spec
+代码审查  /review /deslop-shared-libs /test-audit /investigate /health
+浏览器    /browse /qa /qa-only /scrape /skillify /design-review /design-consultation
+          /design-html /devex-review /canary /benchmark /make-pdf /diagram
+          /pair-agent /setup-browser-cookies /open-gstack-browser
+发布部署  /ship /land-and-deploy /landing-report /setup-deploy
+          /document-release /document-generate
+记忆度量  /context-save /context-restore /learn /retro /setup-gbrain /sync-gbrain
+安全边界  /careful /guard /freeze /unfreeze
+iOS       /ios-qa /ios-fix /ios-design-review /ios-clean /ios-sync
+工具路由  /gstack /gstack-upgrade
+```
+
+### 需要额外条件
+
+| 技能 | 还需要什么 |
+|---|---|
+| `/browse` `/qa` `/scrape` `/canary` `/design-*` 等浏览器类 | Chromium。安装器已经跑过 `bun x playwright install chromium`，手动装的话别漏这一步 |
+| `/cso` | 本机 C 工具链：Linux 要 `cc`，macOS 要 Xcode CLT，Windows 要 VS 的「使用 C++ 的桌面开发」。缺了不影响别的技能，`/cso` 自己会报「静态评估不可用」 |
+| `/codex` | **必须**有 OpenAI Codex CLI（`codex` 命令）。这是上游设计——`/codex` 就是「去问另一个模型」 |
+| `/design-shotgun` | 图像生成能力：Codex 上用它内置的 `$imagegen`；否则要 `$D` 二进制加一个 OpenAI 兼容的图像模型 key |
+| `/eval-plan` `/benchmark-models` | 真花钱的付费评测，会先报价再跑 |
+| `/ios-*` | 真机 + Xcode |
+| `/setup-gbrain` `/sync-gbrain` | 额外的 gbrain CLI（本地 PGLite 或 Supabase） |
+
+### 关于「外脑」评审
+
+gstack 的规划类技能默认会叫一个**别的家族**的模型来评审你的模型，防止自己夸自己。
+本移植把 DeepSeek 也接进了这条链路（`api` runner），所以：
+
+- 原生模型是 `deepseek-flash` 时，外脑指定 `deepseek-reasoner` **会被拒绝**——
+  两者家族相同，上游的 `MODEL_FAMILY_CONFLICT` 门禁仍然生效。这是有意的，不是 bug。
+- 想真正跨家族，还是得装 Claude Code 或 Codex CLI 其中之一。
+- **没有 key 时该拒绝就拒绝**，报文与上游一字不差（见[实测结果](#实测结果)第 3 项）。
 
 ---
 
@@ -202,6 +257,7 @@ if (env !== process.env) return undefined;   // lib/deepseek.ts:79
 | 8 | `bun run typecheck` | 通过 |
 | 9 | **补丁可复现性** | 全新浅克隆上游（`dbf400e`）+ `git apply` → 5 个源文件与本机开发版 **SHA256 逐一相同** |
 | 10 | **`bun test`** | **20 passed / 0 failed**（38 个断言，不联网、不需要 key） |
+| 11 | **`install.ps1` 端到端** | 在**全新目标目录**上跑完整流程：克隆上游 → 打补丁 → `bun install` → 全量构建 → 编译 shim。装出来的 shim 真连 DeepSeek 返回 `INSTALLED`（退出 0），装出来的 `browse` 真开页面（200），5 个源文件与 `src/` **SHA256 逐一相同** |
 
 **第 3 项最有说服力**：改造后「没有 key 时该拒绝」的行为与上游一字不差——
 说明改的是**补通道**，不是拆门禁。

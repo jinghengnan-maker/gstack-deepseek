@@ -1,4 +1,4 @@
-﻿name: CI
+name: CI
 
 on:
   push:
@@ -8,6 +8,20 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # The upstream commit this port was built, verified and byte-compared against
+  # (gstack's own VERSION file reads 1.91.95.0).
+  #
+  # Must be the FULL sha: GitHub only serves arbitrary-commit fetches by full
+  # object name, and `git fetch --depth 1 origin dbf400e` fails with
+  # "couldn't find remote ref dbf400e". This hash is also what gstack stamps
+  # into its build (browse --version prints it).
+  #
+  # Upstream has no release tags, so there is nothing more stable to pin. The
+  # commit is immutable, so a red `patch` job means *our* patch or sources
+  # drifted, never that upstream moved.
+  UPSTREAM_COMMIT: dbf400ec3f1ffb96a429f0d0b29ca932b3d6c6f0
 
 jobs:
   test:
@@ -27,19 +41,6 @@ jobs:
   patch:
     name: patch still applies upstream
     runs-on: ubuntu-latest
-    env:
-      # The upstream commit this port was built, verified and byte-compared
-      # against (gstack's own VERSION file reads 1.91.95.0).
-      #
-      # Must be the FULL sha: GitHub only serves arbitrary-commit fetches by
-      # full object name, and `git fetch --depth 1 origin dbf400e` fails with
-      # "couldn't find remote ref dbf400e". This hash is also what gstack
-      # stamps into its build (browse --version prints it).
-      #
-      # Upstream has no release tags, so there is nothing more stable to pin.
-      # This base is immutable 鈥?a red run here means *our* patch or sources
-      # drifted, never that upstream moved.
-      UPSTREAM_COMMIT: dbf400ec3f1ffb96a429f0d0b29ca932b3d6c6f0
     steps:
       - uses: actions/checkout@v5
 
@@ -65,9 +66,59 @@ jobs:
       - name: Shipped sources match the patched upstream byte for byte
         run: |
           set -euo pipefail
-          diff -u upstream/lib/deepseek.ts                  src/lib/deepseek.ts
-          diff -u upstream/lib/claude-bin.ts                src/lib/claude-bin.ts
-          diff -u upstream/lib/outside-voice-api.ts         src/lib/outside-voice-api.ts
-          diff -u upstream/lib/outside-voice-runner.ts      src/lib/outside-voice-runner.ts
-          diff -u upstream/bin/gstack-deepseek-claude.ts    src/bin/gstack-deepseek-claude.ts
+          diff -u upstream/lib/deepseek.ts               src/lib/deepseek.ts
+          diff -u upstream/lib/claude-bin.ts             src/lib/claude-bin.ts
+          diff -u upstream/lib/outside-voice-api.ts      src/lib/outside-voice-api.ts
+          diff -u upstream/lib/outside-voice-runner.ts   src/lib/outside-voice-runner.ts
+          diff -u upstream/bin/gstack-deepseek-claude.ts src/bin/gstack-deepseek-claude.ts
           echo "all five files identical"
+
+  install:
+    name: installers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+
+      # install.sh clones upstream's *default branch*, not the pin. If upstream
+      # refactors under the patch, users get a conflict instead of an install,
+      # so fail here first with a clear reason.
+      - name: The patch still applies to upstream HEAD
+        run: |
+          set -euo pipefail
+          git clone -q --single-branch --depth 1 \
+            https://github.com/garrytan/gstack.git "$RUNNER_TEMP/upstream-head"
+          git -C "$RUNNER_TEMP/upstream-head" apply --check \
+            "$GITHUB_WORKSPACE/patch/gstack-deepseek-port.patch"
+          echo "upstream HEAD: $(git -C "$RUNNER_TEMP/upstream-head" log --oneline -1)"
+
+      # Full clone + patch + register, skipping only the slow builds. This is
+      # the part a stranger actually runs first, so it has to work unattended.
+      - name: install.sh runs against a fresh target
+        run: |
+          set -euo pipefail
+          bash install.sh "$RUNNER_TEMP/gs" --register none --skip-build
+          test -f "$RUNNER_TEMP/gs/lib/deepseek.ts"
+          test -f "$RUNNER_TEMP/gs/SKILL.md"
+          grep -q gstack-deepseek-claude "$RUNNER_TEMP/gs/.gitignore"
+          echo "installer completed and the target looks right"
+
+      - name: Both installers parse
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          echo "install.sh: syntax ok"
+
+      # Windows PowerShell 5.1 reads a BOM-less UTF-8 .ps1 as ANSI, so a single
+      # non-ASCII byte in install.ps1 corrupts itself on the target machine.
+      # This is a documented design decision, so guard it.
+      - name: install.ps1 stays pure ASCII
+        run: |
+          set -euo pipefail
+          if grep -nP '[^\x00-\x7F]' install.ps1; then
+            echo "::error::install.ps1 contains non-ASCII bytes (see lines above)"
+            exit 1
+          fi
+          echo "install.ps1 is pure ASCII"

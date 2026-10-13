@@ -48,6 +48,17 @@ command -v git >/dev/null 2>&1 || die "git not found."
 ok "git      $(git --version | sed 's/^git version //')"
 
 if ! command -v bun >/dev/null 2>&1; then
+  # bun's official installer drops the binary in ~/.bun/bin, which a
+  # non-interactive shell has not sourced yet.
+  for d in "$HOME/.bun/bin" /usr/local/bin; do
+    if [ -x "$d/bun" ]; then
+      PATH="$d:$PATH"; export PATH
+      break
+    fi
+  done
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
   warn "bun not found. gstack needs Bun >= 1.4.2."
   warn "Install it with:  curl -fsSL https://bun.sh/install | bash"
   die  "bun is required."
@@ -169,21 +180,28 @@ case "$REGISTER" in
       cp "$TARGET/SKILL.md" "$SKILL_ROOT/gstack.md"
       ok "router skill registered as gstack.md"
     fi
-
-    # Path anchor for anything that resolves ~/.claude/skills/gstack/...
-    ANCHOR="$HOME/.claude/skills/gstack"
-    if [ ! -e "$ANCHOR" ]; then
-      mkdir -p "$(dirname "$ANCHOR")"
-      ln -s "$TARGET" "$ANCHOR"
-      ok "symlink created: $ANCHOR"
-    else
-      ok "symlink already present: $ANCHOR"
-    fi
     ;;
   *)
     die "--register must be one of: dsh, claude, none"
     ;;
 esac
+
+# Path anchor for anything resolving ~/.claude/skills/gstack/... -- and the only
+# place lib/claude-bin.ts looks for the bundled DeepSeek shim on a host with no
+# Claude Code. Created even with --register none, for exactly that reason: it
+# costs one symlink, and without it there is no way to find the agent at all.
+ANCHOR="$HOME/.claude/skills/gstack"
+if [ -e "$ANCHOR" ] || [ -L "$ANCHOR" ]; then
+  ok "anchor already present: $ANCHOR"
+else
+  mkdir -p "$(dirname "$ANCHOR")"
+  if ln -s "$(cd "$TARGET" && pwd)" "$ANCHOR" 2>/dev/null; then
+    ok "anchor created: $ANCHOR"
+  else
+    warn "could not create the anchor at $ANCHOR."
+    warn "Set GSTACK_ROOT=$TARGET instead and the shim is still found."
+  fi
+fi
 
 # -------------------------------------------------------------------- key check
 say ""
@@ -206,8 +224,15 @@ say ""
 say "Done."
 say ""
 say "  source    : $TARGET"
+if [ -x "$TARGET/bin/gstack-deepseek-claude" ]; then
+  say "  agent     : $TARGET/bin/gstack-deepseek-claude"
+  say "              (used automatically when no Claude Code CLI is on PATH)"
+else
+  say "  agent     : not built -- nothing will run until you build it:"
+  say "              bun build --compile --outfile bin/gstack-deepseek-claude bin/gstack-deepseek-claude.ts"
+fi
 say "  read next : docs/SKILLS.md for the skill list, docs/ANALYSIS.md for how it works"
 say ""
 say "  Do NOT set ANTHROPIC_* environment variables. The code derives what it"
-say "  needs and a real Claude Code install must keep working. See ANALYSIS.md."
+say "  needs, and a real Claude Code install keeps working if you have one."
 say ""

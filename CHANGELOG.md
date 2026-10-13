@@ -5,6 +5,32 @@
 
 ## [Unreleased]
 
+### Added
+
+- README 新增「装了之后什么能用」：57 个技能按「直接能用 / 需要额外条件」
+  分开列清，并说明「外脑」评审的同族拒绝是有意行为。
+- CI 新增 `installers` job：在干净 runner 上真跑一遍 `install.sh`
+  （克隆 → 打补丁 → 注册），并守住两条不可回退的约定——
+  补丁必须仍能应用到上游 HEAD，`install.ps1` 必须是纯 ASCII。
+
+### Fixed
+
+- `install.ps1` —— **Windows 上装不下去的硬阻塞**：脚本原来只查 PATH 里有没有
+  `bash`，而 Git for Windows 只把 `<root>\cmd` 放进 PATH，`<root>\bin` 从来不进。
+  上游 `./setup` 是 bash 脚本，所以每个正常安装 Git 的 Windows 用户都会在
+  第一步失败。现在新增 `Resolve-GitBash`：先查 PATH，再从 `git.exe` 反推安装根
+  （同时兼容 `<root>\cmd\git.exe` 与 `<root>\bin\git.exe` 两种布局），
+  再依次查常见安装位置与注册表 `HKLM:\SOFTWARE\GitForWindows`。
+  同时把 bun 所在目录前置进 PATH，保证 bash 子进程也能找到 bun。
+- `install.ps1` / `install.sh` —— 路径锚点 `~/.claude/skills/gstack` 改为**总是创建**，
+  不再只在 `--register claude` 时创建。原因是 `lib/claude-bin.ts` 的
+  `resolveDeepSeekShim()` 正是从这个路径找内置 shim：不建锚点，
+  没装 Claude Code 的机器就完全找不到 Agent。
+- `install.sh` —— bun 的官方安装器把二进制放进 `~/.bun/bin`，非交互式 shell
+  不会 source 它。现在会先探测 `~/.bun/bin` 与 `/usr/local/bin` 再加入 PATH。
+- `install.ps1` / `install.sh` —— 收尾横幅改为明确打印**用的是哪个 Agent**；
+  shim 没建出来时直接打印可以照抄的构建命令，而不是让人以为已经能跑。
+
 ### Changed
 
 - `docs/AUTHOR-NOTE.md` —— 补齐改写。新增「工序（The sprint）」「该跑哪个
@@ -12,6 +38,8 @@
   从一行摘要换成上游那段完整对话示例（`Claude:` → `DeepSeek:`）。
   工序、专家分工表、并行冲刺的叙事全部照原作者的写法保留，
   只把后端从 Claude Code 换成 DeepSeek；凡属本项目立场的段落都有明确标注。
+- README「安装脚本说明」按实测结论改写：`install.ps1` 已在全新目标目录上
+  端到端跑通并列出验证项；`install.sh` 仍**只做过语法检查**，如实标注。
 
 ## [1.91.95-ds.1] — 2026-10
 
