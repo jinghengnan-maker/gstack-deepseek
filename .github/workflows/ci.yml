@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.3'
@@ -37,11 +37,11 @@ jobs:
       # stamps into its build (browse --version prints it).
       #
       # Upstream has no release tags, so there is nothing more stable to pin.
-      # This base is immutable — a red run here means *our* patch or sources
+      # This base is immutable 鈥?a red run here means *our* patch or sources
       # drifted, never that upstream moved.
       UPSTREAM_COMMIT: dbf400ec3f1ffb96a429f0d0b29ca932b3d6c6f0
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Fetch upstream at the pinned commit
         run: |
