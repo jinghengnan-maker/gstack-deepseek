@@ -1,0 +1,32 @@
+# 编译产物：不要提交二进制
+*.exe
+*.node
+dist/
+build/
+
+# 依赖
+node_modules/
+bun.lockb
+
+# gstack 运行期状态
+.gstack/
+gstack-state/
+
+# 本地凭据 —— 绝不提交
+.env
+.env.*
+!.env.example
+credentials.yaml
+.credentials.yaml
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时文件
+*.log
+.tmp/
+*.tmp
